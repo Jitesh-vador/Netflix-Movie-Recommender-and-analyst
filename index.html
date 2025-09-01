@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Netflix Recommendation System</title>
+    <script src="https://cdn.plot.ly/plotly-2.24.1.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #141414;
+            --primary-text: #ffffff;
+            --secondary-text: #a0a0a0;
+            --card-bg: #222222;
+            --accent-color: #e50914;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+            margin: 0;
+            background-color: var(--bg-color);
+            color: var(--primary-text);
+        }
+        .tabs {
+            display: flex;
+            background-color: #1a1a1a;
+            border-bottom: 2px solid var(--accent-color);
+        }
+        .tab-button {
+            padding: 15px 25px;
+            cursor: pointer;
+            border: none;
+            background-color: transparent;
+            color: var(--secondary-text);
+            font-size: 1.2em;
+            transition: color 0.3s, background-color 0.3s;
+        }
+        .tab-button.active {
+            color: var(--primary-text);
+            background-color: var(--accent-color);
+        }
+        .tab-content {
+            display: none;
+            padding: 20px;
+        }
+        .tab-content.active {
+            display: block;
+        }
+        h1, h2 {
+            text-align: center;
+        }
+        .filters {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .filters select, .filters input {
+            padding: 10px;
+            background-color: var(--card-bg);
+            color: var(--primary-text);
+            border: 1px solid #555;
+            border-radius: 5px;
+        }
+        .title-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 20px;
+        }
+        .title-card {
+            background-color: var(--card-bg);
+            border-radius: 8px;
+            overflow: hidden;
+            cursor: pointer;
+            transition: transform 0.2s;
+            text-align: center;
+            padding: 10px;
+        }
+        .title-card:hover {
+            transform: scale(1.05);
+        }
+        .title-card p {
+            margin: 10px 0 0;
+        }
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: auto;
+            background-color: rgba(0,0,0,0.8);
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-content {
+            background-color: var(--card-bg);
+            margin: auto;
+            padding: 20px;
+            border-radius: 10px;
+            width: 80%;
+            max-width: 800px;
+            position: relative;
+        }
+        .close-button {
+            color: #aaa;
+            position: absolute;
+            top: 10px;
+            right: 25px;
+            font-size: 35px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .recommendations {
+            margin-top: 20px;
+        }
+        .recommendations h3 {
+            border-bottom: 1px solid var(--accent-color);
+            padding-bottom: 5px;
+        }
+        .chart-container {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 20px;
+        }
+        .chart {
+            width: 100%;
+            max-width: 600px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="tabs">
+        <button class="tab-button active" onclick="openTab(event, 'recommendation')">Recommendation Engine</button>
+        <button class="tab-button" onclick="openTab(event, 'analysis')">Analysis Dashboard</button>
+    </div>
+
+    <!-- Recommendation Engine Tab -->
+    <div id="recommendation" class="tab-content active">
+        <h1>Netflix Movie & TV Show Recommender</h1>
+        <div class="filters">
+            <select id="type-filter">
+                <option value="All">All Types</option>
+                <option value="Movie">Movies</option>
+                <option value="TV Show">TV Shows</option>
+            </select>
+            <select id="genre-filter">
+                <option value="All">All Genres</option>
+            </select>
+            <select id="rating-filter">
+                <option value="All">All Ratings</option>
+            </select>
+        </div>
+        <div id="title-grid" class="title-grid"></div>
+    </div>
+
+    <!-- Analysis Dashboard Tab -->
+    <div id="analysis" class="tab-content">
+        <h1>Netflix Content Analysis</h1>
+        <div class="chart-container">
+            <div id="content-type-chart" class="chart"></div>
+            <div id="top-directors-chart" class="chart"></div>
+            <div id="top-countries-chart" class="chart"></div>
+        </div>
+    </div>
+
+    <!-- Modal for Details and Recommendations -->
+    <div id="details-modal" class="modal">
+        <div class="modal-content">
+            <span class="close-button">&times;</span>
+            <div id="modal-body"></div>
+        </div>
+    </div>
+
+    <script>
+        let netflixData = {};
+
+        async function loadData() {
+            try {
+                const response = await fetch('netflix_data.json');
+                if (!response.ok) throw new Error('Network response was not ok');
+                netflixData = await response.json();
+                console.log("Data loaded successfully");
+                initialize();
+            } catch (error) {
+                console.error('Failed to load netflix_data.json:', error);
+                document.getElementById('title-grid').innerHTML = '<p style="text-align:center;">Error: Could not load data. Please ensure netflix_data.json is in the same folder and you are running this from a local server.</p>';
+            }
+        }
+
+        function initialize() {
+            populateFilters();
+            displayTitles();
+            setupAnalysisCharts();
+        }
+
+        function populateFilters() {
+            const genres = new Set();
+            const ratings = new Set();
+            netflixData.titles.forEach(title => {
+                title.listed_in.split(', ').forEach(genre => genres.add(genre));
+                ratings.add(title.rating);
+            });
+
+            const genreFilter = document.getElementById('genre-filter');
+            Array.from(genres).sort().forEach(genre => {
+                const option = new Option(genre, genre);
+                genreFilter.add(option);
+            });
+
+            const ratingFilter = document.getElementById('rating-filter');
+            Array.from(ratings).sort().forEach(rating => {
+                const option = new Option(rating, rating);
+                ratingFilter.add(option);
+            });
+
+            document.getElementById('type-filter').addEventListener('change', displayTitles);
+            genreFilter.addEventListener('change', displayTitles);
+            ratingFilter.addEventListener('change', displayTitles);
+        }
+
+        function displayTitles() {
+            const grid = document.getElementById('title-grid');
+            grid.innerHTML = '';
+            const typeFilter = document.getElementById('type-filter').value;
+            const genreFilter = document.getElementById('genre-filter').value;
+            const ratingFilter = document.getElementById('rating-filter').value;
+
+            const filteredTitles = netflixData.titles.filter(title => {
+                const typeMatch = typeFilter === 'All' || title.type === typeFilter;
+                const genreMatch = genreFilter === 'All' || title.listed_in.includes(genreFilter);
+                const ratingMatch = ratingFilter === 'All' || title.rating === ratingFilter;
+                return typeMatch && genreMatch && ratingMatch;
+            });
+            
+            // Limit to first 100 for performance
+            filteredTitles.slice(0, 100).forEach(title => {
+                const card = document.createElement('div');
+                card.className = 'title-card';
+                card.innerHTML = `<p>${title.title}</p>`;
+                card.onclick = () => showDetails(title.title);
+                grid.appendChild(card);
+            });
+        }
+
+        function getRecommendations(title, count = 5) {
+            const idx = netflixData.indices[title];
+            if (idx === undefined) return [];
+            
+            const simScores = netflixData.similarity_matrix[idx].map((score, i) => [i, score]);
+            simScores.sort((a, b) => b[1] - a[1]);
+            
+            const topScores = simScores.slice(1, count + 1);
+            const recommendedIndices = topScores.map(score => score[0]);
+            
+            return recommendedIndices.map(i => netflixData.titles[i].title);
+        }
+
+        function showDetails(titleName) {
+            const title = netflixData.titles.find(t => t.title === titleName);
+            const modal = document.getElementById('details-modal');
+            const modalBody = document.getElementById('modal-body');
+            
+            const recommendations = getRecommendations(titleName);
+            let recommendationsHTML = '<h3>Similar Titles:</h3><ul>';
+            recommendations.forEach(rec => {
+                recommendationsHTML += `<li>${rec}</li>`;
+            });
+            recommendationsHTML += '</ul>';
+
+            modalBody.innerHTML = `
+                <h2>${title.title} (${title.release_year})</h2>
+                <p><strong>Type:</strong> ${title.type}</p>
+                <p><strong>Director:</strong> ${title.director}</p>
+                <p><strong>Cast:</strong> ${title.cast}</p>
+                <p><strong>Duration:</strong> ${title.duration}</p>
+                <p><strong>Rating:</strong> ${title.rating}</p>
+                <p><strong>Genre:</strong> ${title.listed_in}</p>
+                <hr>
+                <p>${title.description}</p>
+                <div class="recommendations">${recommendations.length > 0 ? recommendationsHTML : '<p>No recommendations found.</p>'}</div>
+            `;
+            
+            modal.style.display = 'flex';
+        }
+        
+        // Modal close functionality
+        const modal = document.getElementById('details-modal');
+        modal.querySelector('.close-button').onclick = () => modal.style.display = 'none';
+        window.onclick = (event) => {
+            if (event.target == modal) {
+                modal.style.display = "none";
+            }
+        }
+
+        // --- Analysis Tab Logic ---
+        function setupAnalysisCharts() {
+            const analysisData = netflixData.analysis;
+            
+            // Content Type Chart
+            const contentTypeLayout = { title: 'Content Type Distribution', paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font: { color: 'white' }};
+            Plotly.newPlot('content-type-chart', [{
+                values: analysisData.content_type.map(d => d.count),
+                labels: analysisData.content_type.map(d => d.type),
+                type: 'pie',
+                hole: .4
+            }], contentTypeLayout);
+            
+            // Top Directors Chart
+            const topDirectorsLayout = { title: 'Top 10 Directors by Content Count', paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font: { color: 'white' }};
+            Plotly.newPlot('top-directors-chart', [{
+                y: analysisData.top_directors.map(d => d.director),
+                x: analysisData.top_directors.map(d => d.count),
+                type: 'bar',
+                orientation: 'h'
+            }], topDirectorsLayout);
+            
+            // Top Countries Chart
+            const topCountriesLayout = { title: 'Top 10 Countries by Content Count', paper_bgcolor: 'rgba(0,0,0,0)', plot_bgcolor: 'rgba(0,0,0,0)', font: { color: 'white' }};
+            Plotly.newPlot('top-countries-chart', [{
+                y: analysisData.top_countries.map(d => d.country),
+                x: analysisData.top_countries.map(d => d.count),
+                type: 'bar',
+                orientation: 'h'
+            }], topCountriesLayout);
+        }
+
+        // --- Tab Switching Logic ---
+        function openTab(evt, tabName) {
+            document.querySelectorAll('.tab-content').forEach(tc => tc.classList.remove('active'));
+            document.querySelectorAll('.tab-button').forEach(tb => tb.classList.remove('active'));
+            document.getElementById(tabName).classList.add('active');
+            evt.currentTarget.classList.add('active');
+        }
+
+        // Load data on page load
+        window.onload = loadData;
+
+    </script>
+</body>
+</html>
+
