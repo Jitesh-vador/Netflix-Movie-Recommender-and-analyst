@@ -1,6 +1,8 @@
 Netflix Interactive Recommendation System
 An interactive movie and TV show recommendation system that uses a content-based machine learning model to suggest similar titles. This project features a two-part web interface: a recommendation engine with dynamic filtering and a dashboard for data analysis of the Netflix dataset.
 
+NOTE: use Server.py first to make a JSON file for the System. Then Run server2.py to run the html file on a server.
+
 The entire backend model is built with Python, Pandas, and Scikit-learn, while the frontend is a self-contained HTML/JavaScript application using Plotly.js for visualizations.
 
 Dashboard Preview
